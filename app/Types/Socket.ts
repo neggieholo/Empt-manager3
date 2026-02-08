@@ -33,9 +33,18 @@ export type CleanNotification = Omit<AppNotification, "__v" | "adminId" | "updat
 
 export type CleanSocketUser = Omit<SocketUser, "__v" | "pushToken" | "adminId">;
 
+export type LocationState = {
+  latitude: number;
+  longitude: number;
+  address?: string | null;
+  timestamp: number;
+};
+
+
 export interface MonitoringContextType {
   onlineMembers: CleanSocketUser[];
   notifications: CleanNotification[];
+  workerLocations: Record<string, any>;
   clockEvents: { in: CleanClockEvent[]; out: CleanClockEvent[] };
   badgeCount: number;
   isConnected: boolean;
@@ -45,8 +54,10 @@ export interface MonitoringContextType {
   pushToken: string | null;
   setSessionId: (id: string | null) => void;
   setPushToken: (token: string | null) => void;
+  sendLocation: (location: LocationState) => void;
   deleteNotification: (id: string) => void;
   deleteAll: () => void;
+  emitLogout: () => void;
   disconnectSocket: () => void;
 }
 

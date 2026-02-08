@@ -1,9 +1,9 @@
 import { DrawerContentScrollView, DrawerItem } from "@react-navigation/drawer";
 import { DrawerActions } from "@react-navigation/native"; // Import navigation actions
-import { router, usePathname } from "expo-router";
+import { router, usePathname, Href } from "expo-router";
 import { Drawer } from "expo-router/drawer";
 import { Bell, Key, LogOut, UserPlus, X } from "lucide-react-native";
-import { Image, Text, TouchableOpacity, View } from "react-native";
+import { Alert, Image, Text, TouchableOpacity, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { postLogout } from "../services/api";
@@ -12,13 +12,34 @@ import { useMonitoring } from "../SocketContext";
 const brandColor = "rgba(54, 170, 143, 1)";
 
 function CustomDrawerContent(props: any) {
-  const { disconnectSocket } = useMonitoring();
+  const { disconnectSocket, emitLogout } = useMonitoring();
   const handleNavigation = (path: string) => {
     // 1. Close the drawer first
     props.navigation.dispatch(DrawerActions.closeDrawer());
     // 2. Then navigate
-    router.push(path);
+    router.push(path as Href);
   };
+
+  const handleLogout = () => {
+    Alert.alert("Logout", "Are you sure you want to log out?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Logout",
+        style: "destructive",
+        onPress: async () => {
+          emitLogout();
+          disconnectSocket();
+          const result = await postLogout();
+          if (result.success) {
+            router.replace("/");
+          } else {
+            Alert.alert("Logout failed:", result.message);
+          }
+        },
+      },
+    ]);
+  };
+
   return (
     // Main container with the teal background
     <SafeAreaView className="flex-1 bg-[#36AA8F]">
@@ -65,15 +86,7 @@ function CustomDrawerContent(props: any) {
             label="Logout"
             labelStyle={{ color: "#EF4444", marginLeft: -6, fontWeight: "600" }}
             icon={() => <LogOut size={22} color="#EF4444" />}
-            onPress={async () => {
-              disconnectSocket();
-              const result = await postLogout();
-              if (result.success) {
-                router.replace("/");
-              } else {
-                console.log("Logout failed:", result.message);
-              }
-            }}
+            onPress={handleLogout}
           />
         </View>
       </DrawerContentScrollView>

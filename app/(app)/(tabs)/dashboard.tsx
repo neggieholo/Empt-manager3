@@ -1,22 +1,23 @@
+import { useMonitoring } from "@/app/SocketContext";
+import { LocationState } from "@/app/Types/Socket";
 import * as Location from "expo-location";
+import { router } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { ScrollView, Text, TouchableOpacity, View } from "react-native";
 import { WebView } from "react-native-webview";
 import * as LocationModule from "../../../modules/LocationModule";
 import "../../global.css";
-import { useMonitoring } from "@/app/SocketContext";
-import { router } from "expo-router";
-
-type LocationState = {
-  latitude: number;
-  longitude: number;
-  address?: string | null;
-};
 
 export default function Dashboard() {
   const [location, setLocation] = useState<LocationState | null>(null);
   const webViewRef = useRef<WebView>(null);
-  const { onlineMembers, clockEvents } = useMonitoring();
+  const {
+    onlineMembers,
+    clockEvents,
+    sendLocation,
+    workerLocations,
+    userName,
+  } = useMonitoring();
 
   useEffect(() => {
     const startTrackingSafely = async () => {
@@ -27,7 +28,7 @@ export default function Dashboard() {
         try {
           // This triggers the native Android popup to turn on Location
           await Location.enableNetworkProviderAsync();
-        } catch (error:any) {
+        } catch (error: any) {
           console.log("User refused to enable location services");
           return; // Stop if they won't turn it on
         }
@@ -61,17 +62,32 @@ export default function Dashboard() {
     // 3. LISTEN for the updates coming from Kotlin
     const subscription = LocationModule.addLocationListener((data) => {
       // console.log("Update received in UI:", data);
-      if (webViewRef.current) {
-        const moveScript = `updateMap(${data.latitude}, ${data.longitude});`;
-        webViewRef.current.injectJavaScript(moveScript);
-      }
       setLocation(data);
+      sendLocation(data);
     });
 
     return () => {
       subscription.remove();
     };
-  }, []); // Remove location from dependency array to prevent effect loops
+  }, []);
+
+  useEffect(() => {
+    if (!webViewRef.current) return;
+
+    if (location?.latitude && location?.longitude) {
+      const selfScript = `updateSelf(${parseFloat(location.latitude.toString())}, ${parseFloat(location.longitude.toString())});`;
+      webViewRef.current.injectJavaScript(selfScript);
+    }
+
+    if (workerLocations) {
+      Object.entries(workerLocations).forEach(([name, data]) => {
+        if (name !== userName && data.latitude && data.longitude) {
+          const workerScript = `updateWorker("${name}", ${parseFloat(data.latitude.toString())}, ${parseFloat(data.longitude.toString())});`;
+          webViewRef.current?.injectJavaScript(workerScript);
+        }
+      });
+    }
+  }, [location, workerLocations]);
 
   const mapHtml = `
     <!DOCTYPE html>
@@ -89,30 +105,42 @@ export default function Dashboard() {
       <body>
         <div id="map"></div>
         <script>
-          var map, marker;
+          var map;
+          var selfMarker = null; // Separate variable for YOU
+          var workerMarkers = {}; // Object for everyone else
+          var isReady = false;
 
-          // Initialize Map immediately
-          map = L.map('map', { 
-            zoomControl: false,
-            attributionControl: false 
-          }).setView([0, 0], 2);
-
+          map = L.map('map', { zoomControl: false, attributionControl: false }).setView([6.5, 3.3], 12); // Default to Lagos area
           L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+          isReady = true;
 
-          // Function called from React Native
-          function updateMap(lat, lon) {
-            if (!map) return;
-            
-            var newPos = [lat, lon];
-            
-            if (!marker) {
-              // First time: Create marker and center map
-              marker = L.marker(newPos).addTo(map);
-              map.setView(newPos, 16);
+          function updateSelf(lat, lon) {
+            if(!isReady || !lat || !lon || lat == 0) return; // Prevent [0,0] overlap
+            var pos = [parseFloat(lat), parseFloat(lon)];
+            if (!selfMarker) {
+              selfMarker = L.marker(pos).addTo(map).bindPopup("<b>You</b>");
+              map.setView(pos, 16);
             } else {
-              // Updates: Move marker and pan smoothly
-              marker.setLatLng(newPos);
-              map.panTo(newPos);
+              selfMarker.setLatLng(pos);
+            }
+          }
+
+          function updateWorker(name, lat, lon) {
+            if(!isReady || !lat || !lon || lat == 0 || !name) return; // Stop bad data
+            var offsetLat = parseFloat(lat) + (Math.random() - 0.5) * 0.0001;
+            var offsetLon = parseFloat(lon) + (Math.random() - 0.5) * 0.0001;
+            var pos = [offsetLat, offsetLon];
+            if (!workerMarkers[name]) {
+              workerMarkers[name] = L.marker(pos, {
+                icon: L.icon({
+                  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
+                  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+                  iconSize: [25, 41],
+                  iconAnchor: [12, 41]
+                })
+              }).addTo(map).bindPopup("<b>" + name + "</b>");
+            } else {
+              workerMarkers[name].setLatLng(pos);
             }
           }
         </script>
@@ -128,25 +156,34 @@ export default function Dashboard() {
     >
       {/* 1. Vertically Stacked Buttons at the Top */}
       <View className="flex gap-3 mb-5 w-[85%] mx-auto">
-        <TouchableOpacity 
-        className="bg-yellow-500 p-4 rounded-xl shadow-sm items-center border border-gray-200"
-        onPress={()=>{router.push('/onliners')}}>
+        <TouchableOpacity
+          className="bg-yellow-500 p-4 rounded-xl shadow-sm items-center border border-gray-200"
+          onPress={() => {
+            router.push("/onliners");
+          }}
+        >
           <Text className="text-gray-800 font-semibold text-base">
             Online: {onlineMembers.length}
           </Text>
         </TouchableOpacity>
 
-        <TouchableOpacity 
-        className="bg-green-500 p-4 rounded-xl shadow-sm items-center border border-gray-200"
-        onPress={()=>{router.push('/clockins')}}>
+        <TouchableOpacity
+          className="bg-green-500 p-4 rounded-xl shadow-sm items-center border border-gray-200"
+          onPress={() => {
+            router.push("/clockins");
+          }}
+        >
           <Text className="text-gray-800 font-semibold text-base">
             Clocked In: {clockEvents.in.length}
           </Text>
         </TouchableOpacity>
 
-        <TouchableOpacity 
-        className="bg-red-500 p-4 rounded-xl shadow-sm items-center border border-gray-200"
-        onPress={()=>{router.push('/clockouts')}}>
+        <TouchableOpacity
+          className="bg-red-500 p-4 rounded-xl shadow-sm items-center border border-gray-200"
+          onPress={() => {
+            router.push("/clockouts");
+          }}
+        >
           <Text className="text-gray-800 font-semibold text-base">
             Clocked Out: {clockEvents.out.length}
           </Text>
@@ -157,15 +194,27 @@ export default function Dashboard() {
         <WebView
           ref={webViewRef}
           originWhitelist={["*"]}
-          scrollEnabled={false}
-          className="flex-1"
-          // Use location to set the INITIAL state, but don't bind the
-          // whole HTML string to the location state to avoid re-renders.
+          javaScriptEnabled={true} // 👈 Ensure this is true
+          domStorageEnabled={true}
           source={{ html: mapHtml }}
           onLoadEnd={() => {
+            console.log("🗺️ Map Ready: Syncing current worker states...");
+
+            // 1. Sync Yourself
             if (location) {
-              const initScript = `updateMap(${location.latitude}, ${location.longitude});`;
-              webViewRef.current?.injectJavaScript(initScript);
+              webViewRef.current?.injectJavaScript(
+                `updateSelf(${location.latitude}, ${location.longitude});`,
+              );
+            }
+
+            // 2. Sync all workers currently in memory
+            if (workerLocations) {
+              Object.entries(workerLocations).forEach(([name, data]) => {
+                if (name !== userName) {
+                  const syncScript = `updateWorker("${name}", ${data.latitude}, ${data.longitude});`;
+                  webViewRef.current?.injectJavaScript(syncScript);
+                }
+              });
             }
           }}
         />
@@ -185,6 +234,41 @@ export default function Dashboard() {
           <View className="mt-2 bg-gray-200 px-3 py-1 rounded-full">
             <Text className="text-gray-600 text-[10px] font-mono">
               {location.latitude.toFixed(6)}, {location.longitude.toFixed(6)}
+            </Text>
+          </View>
+        )}
+      </View>
+
+      {/* 4. Worker List Section */}
+      <View className="w-[85%] mx-auto mt-2 mb-10">
+        <Text className="text-gray-400 text-[10px] font-bold uppercase tracking-widest mb-3 px-1">
+          Active Team Members
+        </Text>
+        {Object.entries(workerLocations).length > 0 ? (
+          Object.entries(workerLocations)
+            .filter(([name]) => name !== userName)
+            .map(([name, data]) => (
+              <View
+                key={name}
+                className="bg-white p-4 rounded-2xl mb-3 shadow-sm flex-row items-center border border-gray-100"
+              >
+                <View className="h-10 w-10 rounded-full bg-blue-500 items-center justify-center mr-3">
+                  <Text className="text-white font-bold">
+                    {name.charAt(0).toUpperCase()}
+                  </Text>
+                </View>
+                <View className="flex-1">
+                  <Text className="text-gray-900 font-bold">{name}</Text>
+                  <Text className="text-gray-500 text-xs" numberOfLines={1}>
+                    {data.address || "Fetching address..."}
+                  </Text>
+                </View>
+              </View>
+            ))
+        ) : (
+          <View className="p-10 items-center">
+            <Text className="text-gray-400 italic text-sm">
+              No workers active on map
             </Text>
           </View>
         )}

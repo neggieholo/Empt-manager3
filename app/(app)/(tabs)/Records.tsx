@@ -81,8 +81,8 @@ export default function ReportsScreen() {
     setIsExporting(true);
 
     const now = new Date();
-    const datePart = now.toISOString().split('T')[0]; // 2026-02-06
-    const timePart = now.toTimeString().split(' ')[0].replace(/:/g, "-"); // 11-50-44
+    const datePart = now.toISOString().split("T")[0]; // 2026-02-06
+    const timePart = now.toTimeString().split(" ")[0].replace(/:/g, "-"); // 11-50-44
     const fileName = `Report_${datePart}_${timePart}.${format}`;
 
     // Helper to clean data: Removes commas so they don't break CSV columns
@@ -279,13 +279,19 @@ export default function ReportsScreen() {
           <ActivityIndicator size="large" color="#36AA8F" className="mt-10" />
         ) : (
           <FlatList
-            data={filteredEvents}
+            data={allEvents}
             keyExtractor={(item) => item._id}
             renderItem={({ item }) => {
               const clockInDate = new Date(item.clockInTime);
               const today = new Date();
 
-              // Reset time to 00:00:00 for a pure date comparison
+              // Formatting the shared date (e.g., "Feb 7, 2026")
+              const sharedDate = clockInDate.toLocaleDateString(undefined, {
+                year: "numeric",
+                month: "short",
+                day: "numeric",
+              });
+
               const isBeforeToday =
                 clockInDate.getFullYear() < today.getFullYear() ||
                 (clockInDate.getFullYear() === today.getFullYear() &&
@@ -296,11 +302,13 @@ export default function ReportsScreen() {
 
               return (
                 <View className="bg-white p-4 mb-4 rounded-2xl shadow-sm border-l-4 border-[#36AA8F]">
-                  {/* Header: Name and Status */}
-                  <View className="flex-row justify-between items-center mb-3">
-                    <Text className="font-bold text-gray-900 text-lg">
-                      {item.name}
-                    </Text>
+                  {/* Top Section: Date and Status Badge */}
+                  <View className="flex-row justify-between items-center mb-4">
+                    <View className="bg-gray-100 px-3 py-1 rounded-md">
+                      <Text className="text-gray-600 font-bold text-xs">
+                        {sharedDate}
+                      </Text>
+                    </View>
                     <View
                       className={`px-3 py-1 rounded-full ${item.status === "clocked in" ? "bg-green-100" : "bg-gray-100"}`}
                     >
@@ -312,20 +320,28 @@ export default function ReportsScreen() {
                     </View>
                   </View>
 
+                  {/* Worker Name */}
+                  <Text className="font-bold text-gray-900 text-lg mb-3">
+                    {item.name}
+                  </Text>
+
                   {/* Clock IN Info */}
-                  <View className="mb-3">
+                  <View className="mb-4">
                     <View className="flex-row items-center mb-1">
                       <Ionicons
                         name="enter-outline"
                         size={14}
                         color="#36AA8F"
                       />
-                      <Text className="ml-1 text-xs font-bold text-gray-500 uppercase">
-                        Clock In
+                      <Text className="ml-1 text-xs font-bold text-gray-400 uppercase">
+                        Clock In Time
                       </Text>
                     </View>
-                    <Text className="text-gray-800 font-medium">
-                      {clockInDate.toLocaleString()}
+                    <Text className="text-gray-800 text-base font-semibold">
+                      {clockInDate.toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
                     </Text>
                     <Text className="text-gray-500 text-xs mt-1">
                       {item.clockInLocation}
@@ -337,7 +353,7 @@ export default function ReportsScreen() {
                     ) : null}
                   </View>
 
-                  {/* Clock OUT Info / Status Logic */}
+                  {/* Clock OUT Info */}
                   <View className="pt-3 border-t border-gray-100">
                     {item.clockOutTime ? (
                       <>
@@ -347,12 +363,15 @@ export default function ReportsScreen() {
                             size={14}
                             color="#ef4444"
                           />
-                          <Text className="ml-1 text-xs font-bold text-gray-500 uppercase">
-                            Clock Out
+                          <Text className="ml-1 text-xs font-bold text-gray-400 uppercase">
+                            Clock Out Time
                           </Text>
                         </View>
-                        <Text className="text-gray-800 font-medium">
-                          {new Date(item.clockOutTime).toLocaleString()}
+                        <Text className="text-gray-800 text-base font-semibold">
+                          {new Date(item.clockOutTime).toLocaleTimeString([], {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
                         </Text>
                         <Text className="text-gray-500 text-xs mt-1">
                           {item.clockOutLocation}
@@ -364,7 +383,7 @@ export default function ReportsScreen() {
                         ) : null}
                       </>
                     ) : (
-                      <View className="flex-row items-center">
+                      <View className="flex-row items-center py-1">
                         <Ionicons
                           name={isBeforeToday ? "alert-circle" : "time"}
                           size={16}
@@ -374,8 +393,8 @@ export default function ReportsScreen() {
                           className={`ml-1 text-xs font-bold italic ${isBeforeToday ? "text-red-500" : "text-orange-500"}`}
                         >
                           {isBeforeToday
-                            ? "No clock-out (Past Record)"
-                            : "On Active Duty (Today)"}
+                            ? "Missing clock-out (Past Record)"
+                            : "On Active Duty (Currently)"}
                         </Text>
                       </View>
                     )}

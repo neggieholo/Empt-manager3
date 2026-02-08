@@ -1,3 +1,4 @@
+import * as Notifications from "expo-notifications";
 import { useRouter } from "expo-router";
 import React, {
   createContext,
@@ -7,13 +8,14 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { Alert } from "react-native";
+import { Platform } from "react-native";
 import { io, Socket } from "socket.io-client";
 import { fetchTodayClock, postLogout } from "./services/api";
 import { CleanClockEvent } from "./Types/Employee";
 import {
   CleanNotification,
   CleanSocketUser,
+  LocationState,
   MonitoringContextType,
 } from "./Types/Socket";
 
@@ -42,6 +44,11 @@ export default function MonitoringProvider({
     in: CleanClockEvent[];
     out: CleanClockEvent[];
   }>({ in: [], out: [] });
+
+  const [workerLocations, setWorkerLocations] = useState<Record<string, any>>(
+    {},
+  );
+
   const badgeCount = notifications.length;
 
   const disconnectSocket = () => {
@@ -99,6 +106,21 @@ export default function MonitoringProvider({
       },
     );
 
+    newSocket.on("user_location", (data) => {
+      // data = { user: "Worker Name", location: { latitude, longitude, address }, date: "..." }
+      console.log(`📍 Received location for ${data.user}`);
+
+      setWorkerLocations((prev) => ({
+        ...prev,
+        [data.user]: {
+          latitude: data.location.latitude,
+          longitude: data.location.longitude,
+          address: data.location.address,
+          timestamp: data.location.timestamp,
+        },
+      }));
+    });
+
     newSocket.on("notification_deleted", (id: string) => {
       setNotifications((prev) => prev.filter((n) => n._id !== id));
     });
@@ -138,6 +160,41 @@ export default function MonitoringProvider({
   }, [sessionId, pushToken, router]);
 
   useEffect(() => {
+    // Only run if there are actually workers to check
+    console.log("workerLocations:", workerLocations);
+    if (Object.keys(workerLocations).length === 0) return;
+
+    const cleanupInterval = setInterval(() => {
+      const now = Date.now();
+      const twelveSeconds = 12 * 1000;
+      let hasChanged = false;
+
+      setWorkerLocations((prev) => {
+        const updated = { ...prev };
+
+        for (const [name, data] of Object.entries(updated)) {
+          const lastSeen =
+            typeof data.timestamp === "number"
+              ? data.timestamp
+              : new Date(data.timestamp).getTime();
+
+          if (!isNaN(lastSeen) && now - lastSeen > twelveSeconds) {
+            console.log(
+              `🧹 Removing ${name} - Last update was ${Math.round((now - lastSeen) / 1000)}s ago`,
+            );
+            delete updated[name];
+            hasChanged = true;
+          }
+        }
+
+        return hasChanged ? updated : prev; // Only trigger re-render if someone was removed
+      });
+    }, 5000); // Check every 5 seconds
+
+    return () => clearInterval(cleanupInterval);
+  }, [workerLocations]);
+
+  useEffect(() => {
     // Only start polling if we are connected/authenticated
     if (!sessionId) return;
 
@@ -162,6 +219,59 @@ export default function MonitoringProvider({
     };
   }, [sessionId]);
 
+  // Inside MonitoringProvider.tsx
+
+  useEffect(() => {
+    const setupNotifications = async () => {
+      // 1. Create the Channel (Mandatory for Android Dev Builds)
+      if (Platform.OS === "android") {
+        await Notifications.setNotificationChannelAsync("default", {
+          name: "Default Channel",
+          importance: Notifications.AndroidImportance.MAX,
+          showBadge: true,
+          vibrationPattern: [0, 250, 250, 250],
+          lightColor: "#FF231F7C",
+        });
+      }
+
+      // 2. Set the handler
+      Notifications.setNotificationHandler({
+        handleNotification: async () => ({
+          shouldShowAlert: true,
+          shouldPlaySound: true,
+          shouldSetBadge: true,
+          shouldShowBanner: true,
+          shouldShowList: true,
+        }),
+      });
+    }; // <--- This closes setupNotifications
+
+    setupNotifications(); // <--- Now it's called correctly inside useEffect
+  }, []);
+
+  const sendLocation = (location: LocationState) => {
+    if (socketRef.current && socketRef.current.connected) {
+      socketRef.current.emit("user_location", {
+        latitude: location.latitude,
+        longitude: location.longitude,
+        address: location.address,
+        timestamp: location.timestamp,
+      });
+      console.log(
+        `📍 Location sent: ${location.latitude}, ${location.longitude}`,
+      );
+    }
+  };
+
+  const emitLogout = () => {
+    if (socketRef.current && socketRef.current.connected) {
+      console.log("📤 Emitting employee_logged_out...");
+      socketRef.current.emit("employee_logged_out");
+    } else {
+      console.warn("⚠️ Socket not connected, could not emit logout event");
+    }
+  };
+
   const deleteNotification = (notificationId: string) => {
     socketRef.current?.emit("delete_notification", { notificationId });
   };
@@ -175,6 +285,7 @@ export default function MonitoringProvider({
       value={{
         onlineMembers,
         clockEvents,
+        workerLocations,
         notifications,
         badgeCount,
         isConnected,
@@ -184,8 +295,10 @@ export default function MonitoringProvider({
         pushToken,
         setSessionId,
         setPushToken,
+        sendLocation,
         deleteNotification,
         deleteAll,
+        emitLogout,
         disconnectSocket,
       }}
     >
