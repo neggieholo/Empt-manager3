@@ -49,6 +49,10 @@ export default function MonitoringProvider({
     {},
   );
 
+  const [pendingTap, setPendingTap] = useState(false);
+  // 1. Add this Ref at the top of your component (near other refs)
+  const isHandlingRedirect = useRef(false);
+
   const badgeCount = notifications.length;
 
   const disconnectSocket = () => {
@@ -69,7 +73,7 @@ export default function MonitoringProvider({
       return;
     }
 
-    const newSocket = io("http://10.35.61.113:3060", {
+    const newSocket = io("http://192.168.8.193:3060", {
       path: "/api/socket.io", // 👈 MUST match the server path exactly
       transports: ["websocket"],
       autoConnect: true,
@@ -107,18 +111,45 @@ export default function MonitoringProvider({
     );
 
     newSocket.on("user_location", (data) => {
-      // data = { user: "Worker Name", location: { latitude, longitude, address }, date: "..." }
       console.log(`📍 Received location for ${data.user}`);
 
-      setWorkerLocations((prev) => ({
-        ...prev,
-        [data.user]: {
-          latitude: data.location.latitude,
-          longitude: data.location.longitude,
-          address: data.location.address,
-          timestamp: data.location.timestamp,
-        },
-      }));
+      setWorkerLocations((prev) => {
+        let lat = parseFloat(data.location.latitude);
+        let lon = parseFloat(data.location.longitude);
+
+        // 1. Check for overlap, but EXCLUDE the worker who just sent the data
+        const isOverlapping = Object.entries(prev).some(
+          ([workerName, workerData]: [string, any]) => {
+            // Only compare if it's a DIFFERENT person
+            if (workerName !== data.user) {
+              return (
+                parseFloat(workerData.latitude) === lat &&
+                parseFloat(workerData.longitude) === lon
+              );
+            }
+            return false;
+          },
+        );
+
+        if (isOverlapping) {
+          // Apply offset only if they are standing on SOMEONE ELSE'S spot
+          lat = lat + (Math.random() - 0.5) * 0.0001;
+          lon = lon + (Math.random() - 0.5) * 0.0001;
+          console.log(
+            `⚠️ Overlap found for ${data.user} with another worker. Offset applied.`,
+          );
+        }
+
+        return {
+          ...prev,
+          [data.user]: {
+            latitude: lat,
+            longitude: lon,
+            address: data.location.address,
+            timestamp: data.location.timestamp,
+          },
+        };
+      });
     });
 
     newSocket.on("notification_deleted", (id: string) => {
@@ -160,36 +191,37 @@ export default function MonitoringProvider({
   }, [sessionId, pushToken, router]);
 
   useEffect(() => {
-    // Only run if there are actually workers to check
-    console.log("workerLocations:", workerLocations);
-    if (Object.keys(workerLocations).length === 0) return;
+    // 1. Initial check: if no workers, don't even start the interval
+    if (!workerLocations || Object.keys(workerLocations).length === 0) return;
 
     const cleanupInterval = setInterval(() => {
       const now = Date.now();
-      const twelveSeconds = 12 * 1000;
+      const expiryLimit = 12 * 1000; // 12 seconds
       let hasChanged = false;
 
       setWorkerLocations((prev) => {
         const updated = { ...prev };
 
         for (const [name, data] of Object.entries(updated)) {
+          // Handle both Number (local) and ISO String (server) formats
           const lastSeen =
             typeof data.timestamp === "number"
               ? data.timestamp
-              : new Date(data.timestamp).getTime();
+              : Date.parse(data.timestamp); // Date.parse is faster for ISO strings
 
-          if (!isNaN(lastSeen) && now - lastSeen > twelveSeconds) {
+          // Check for invalid dates or staleness
+          if (isNaN(lastSeen) || now - lastSeen > expiryLimit) {
             console.log(
-              `🧹 Removing ${name} - Last update was ${Math.round((now - lastSeen) / 1000)}s ago`,
+              `🧹 Removing ${name}: ${isNaN(lastSeen) ? "Invalid timestamp" : `Stale by ${Math.round((now - lastSeen) / 1000)}s`}`,
             );
             delete updated[name];
             hasChanged = true;
           }
         }
 
-        return hasChanged ? updated : prev; // Only trigger re-render if someone was removed
+        return hasChanged ? updated : prev;
       });
-    }, 5000); // Check every 5 seconds
+    }, 5000); // Heartbeat check every 5 seconds
 
     return () => clearInterval(cleanupInterval);
   }, [workerLocations]);
@@ -219,8 +251,6 @@ export default function MonitoringProvider({
     };
   }, [sessionId]);
 
-  // Inside MonitoringProvider.tsx
-
   useEffect(() => {
     const setupNotifications = async () => {
       // 1. Create the Channel (Mandatory for Android Dev Builds)
@@ -248,6 +278,55 @@ export default function MonitoringProvider({
 
     setupNotifications(); // <--- Now it's called correctly inside useEffect
   }, []);
+
+  // 2. The combined notification logic
+  useEffect(() => {
+    const handleRedirect = (data: any) => {
+      // If we are already moving or just moved, stop.
+      if (isHandlingRedirect.current) return;
+
+      if (sessionId) {
+        isHandlingRedirect.current = true;
+        console.log("🚀 Navigating to notifications...");
+
+        // Use push or replace
+        router.push("/notifications");
+
+        // Reset the lock after 2 seconds to allow future valid taps
+        setTimeout(() => {
+          isHandlingRedirect.current = false;
+        }, 2000);
+      } else {
+        console.log("⏳ Saving tap for after login");
+        setPendingTap(true);
+      }
+    };
+
+    // NEW: The modern way to handle notifications (including Cold Starts)
+    // addNotificationResponseReceivedListener handles both background and
+    // the initial notification that opened the app.
+    const subscription = Notifications.addNotificationResponseReceivedListener(
+      (response) => {
+        handleRedirect(response.notification.request.content.data);
+      },
+    );
+
+    return () => subscription.remove();
+  }, [sessionId, router]);
+
+  // 3. The "After Login" trigger
+  useEffect(() => {
+    if (sessionId && pendingTap && !isHandlingRedirect.current) {
+      isHandlingRedirect.current = true;
+      console.log("✅ Session ready, fulfilling pending tap");
+      router.push("/notifications");
+      setPendingTap(false);
+
+      setTimeout(() => {
+        isHandlingRedirect.current = false;
+      }, 2000);
+    }
+  }, [sessionId, pendingTap]);
 
   const sendLocation = (location: LocationState) => {
     if (socketRef.current && socketRef.current.connected) {

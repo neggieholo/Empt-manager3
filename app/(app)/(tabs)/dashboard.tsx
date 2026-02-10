@@ -87,6 +87,17 @@ export default function Dashboard() {
         }
       });
     }
+
+    const activeNames = Object.keys(workerLocations);
+    const cleanupScript = `
+      Object.keys(workerMarkers).forEach(markerName => {
+        if (!${JSON.stringify(activeNames)}.includes(markerName)) {
+          removeWorker(markerName);
+        }
+      });
+    `;
+    webViewRef.current.injectJavaScript(cleanupScript);
+    
   }, [location, workerLocations]);
 
   const mapHtml = `
@@ -109,20 +120,38 @@ export default function Dashboard() {
           var selfMarker = null; // Separate variable for YOU
           var workerMarkers = {}; // Object for everyone else
           var isReady = false;
+          var currentSelfPos = null;
 
           map = L.map('map', { zoomControl: false, attributionControl: false }).setView([6.5, 3.3], 12); // Default to Lagos area
           L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
           isReady = true;
 
           function updateSelf(lat, lon) {
-            if(!isReady || !lat || !lon || lat == 0) return; // Prevent [0,0] overlap
-            var pos = [parseFloat(lat), parseFloat(lon)];
-            if (!selfMarker) {
-              selfMarker = L.marker(pos).addTo(map).bindPopup("<b>You</b>");
-              map.setView(pos, 16);
-            } else {
-              selfMarker.setLatLng(pos);
-            }
+              if(!isReady || !lat || !lon || lat == 0) return;
+              
+              var baseLat = parseFloat(lat);
+              var baseLon = parseFloat(lon);
+              currentSelfPos = { lat: baseLat, lng: baseLon }; // Save for worker check
+
+              var finalPos = [baseLat, baseLon];
+
+              // Check if YOU are on top of any existing WORKER
+              for (var name in workerMarkers) {
+                  var wPos = workerMarkers[name].getLatLng();
+                  if (wPos.lat === baseLat && wPos.lng === baseLon) {
+                      // If you overlap a worker, offset YOUR marker
+                      finalPos[0] += (Math.random() - 0.5) * 0.0001;
+                      finalPos[1] += (Math.random() - 0.5) * 0.0001;
+                      break; 
+                  }
+              }
+
+              if (!selfMarker) {
+                  selfMarker = L.marker(finalPos).addTo(map).bindPopup("<b>You</b>");
+                  map.setView(finalPos, 16);
+              } else {
+                  selfMarker.setLatLng(finalPos);
+              }
           }
 
           function updateWorker(name, lat, lon) {
@@ -142,6 +171,14 @@ export default function Dashboard() {
             } else {
               workerMarkers[name].setLatLng(pos);
             }
+          }
+
+          function removeWorker(name) {
+              if (workerMarkers[name]) {
+                  map.removeLayer(workerMarkers[name]); // Remove from map
+                  delete workerMarkers[name];           // Remove from our JS object
+                  console.log("🗑️ Marker removed for: " + name);
+              }
           }
         </script>
       </body>
