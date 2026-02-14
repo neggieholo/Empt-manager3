@@ -194,7 +194,7 @@ export default function Dashboard() {
       {/* 1. Vertically Stacked Buttons at the Top */}
       <View className="flex gap-3 mb-5 w-[85%] mx-auto">
         <TouchableOpacity
-          className="bg-yellow-500 p-4 rounded-xl shadow-sm items-center border border-gray-200"
+          className="bg-yellow-500 p-1 rounded-xl shadow-sm items-center border border-gray-200"
           onPress={() => {
             router.push("/onliners");
           }}
@@ -205,7 +205,7 @@ export default function Dashboard() {
         </TouchableOpacity>
 
         <TouchableOpacity
-          className="bg-green-500 p-4 rounded-xl shadow-sm items-center border border-gray-200"
+          className="bg-green-500 p-1 rounded-xl shadow-sm items-center border border-gray-200"
           onPress={() => {
             router.push("/clockins");
           }}
@@ -216,7 +216,7 @@ export default function Dashboard() {
         </TouchableOpacity>
 
         <TouchableOpacity
-          className="bg-red-500 p-4 rounded-xl shadow-sm items-center border border-gray-200"
+          className="bg-red-500 p-1 rounded-xl shadow-sm items-center border border-gray-200"
           onPress={() => {
             router.push("/clockouts");
           }}
