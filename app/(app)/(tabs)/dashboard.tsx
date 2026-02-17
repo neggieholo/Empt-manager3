@@ -123,8 +123,18 @@ export default function Dashboard() {
           var currentSelfPos = null;
 
           map = L.map('map', { zoomControl: false, attributionControl: false }).setView([6.5, 3.3], 12); // Default to Lagos area
-          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+              userAgent: 'EmployeeTracker-Lagos-ManagerApp'
+              attribution: '© OpenStreetMap contributors',
+              keepBuffer: 2, 
+              updateWhenIdle: true,
+              crossOrigin: true 
+          }).addTo(map);
           isReady = true;
+
+          setTimeout(function() {
+            map.invalidateSize();
+          }, 500);
 
           function updateSelf(lat, lon) {
               if(!isReady || !lat || !lon || lat == 0) return;
@@ -231,8 +241,9 @@ export default function Dashboard() {
         <WebView
           ref={webViewRef}
           originWhitelist={["*"]}
-          javaScriptEnabled={true} // 👈 Ensure this is true
+          javaScriptEnabled={true}
           domStorageEnabled={true}
+          userAgent="Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36"
           source={{ html: mapHtml }}
           onLoadEnd={() => {
             console.log("🗺️ Map Ready: Syncing current worker states...");

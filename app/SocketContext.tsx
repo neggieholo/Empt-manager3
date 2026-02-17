@@ -73,7 +73,7 @@ export default function MonitoringProvider({
       return;
     }
 
-    const newSocket = io("http://10.21.77.113:3060", {
+    const newSocket = io("https://www.employeetracker.app", {
       path: "/api/socket.io", // 👈 MUST match the server path exactly
       transports: ["websocket"],
       autoConnect: true,
@@ -91,7 +91,7 @@ export default function MonitoringProvider({
     });
 
     newSocket.on("onlineCheck", (users: CleanSocketUser[]) => {
-      console.log("Online members update:", users);
+      // console.log("Online members update:", users);
       setOnlineMembers(users);
     });
 
@@ -111,7 +111,7 @@ export default function MonitoringProvider({
     );
 
     newSocket.on("user_location", (data) => {
-      console.log(`📍 Received location for ${data.user}`);
+      // console.log(`📍 Received location for ${data.user}`);
 
       setWorkerLocations((prev) => {
         let lat = parseFloat(data.location.latitude);
@@ -135,9 +135,9 @@ export default function MonitoringProvider({
           // Apply offset only if they are standing on SOMEONE ELSE'S spot
           lat = lat + (Math.random() - 0.5) * 0.0001;
           lon = lon + (Math.random() - 0.5) * 0.0001;
-          console.log(
-            `⚠️ Overlap found for ${data.user} with another worker. Offset applied.`,
-          );
+          // console.log(
+          //   `⚠️ Overlap found for ${data.user} with another worker. Offset applied.`,
+          // );
         }
 
         return {
