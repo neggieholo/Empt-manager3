@@ -97,7 +97,6 @@ export default function Dashboard() {
       });
     `;
     webViewRef.current.injectJavaScript(cleanupScript);
-    
   }, [location, workerLocations]);
 
   const mapHtml = `
@@ -122,13 +121,13 @@ export default function Dashboard() {
           var isReady = false;
           var currentSelfPos = null;
 
-          map = L.map('map', { zoomControl: false, attributionControl: false }).setView([6.5, 3.3], 12); // Default to Lagos area
-          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-              userAgent: 'EmployeeTracker-Lagos-ManagerApp'
-              attribution: '© OpenStreetMap contributors',
-              keepBuffer: 2, 
-              updateWhenIdle: true,
-              crossOrigin: true 
+          map = L.map('map', { zoomControl: true, attributionControl: false }).setView([6.5, 3.3], 12);
+          L.tileLayer('https://tiles.snametechapp.com/styles/basic-preview/{z}/{x}/{y}.png', {
+              maxZoom: 18,
+              minZoom: 0,
+              keepBuffer: 4,      // Loads 4 rows of tiles outside the visible area
+              updateWhenIdle: false, // Loads tiles while panning for a smoother feel
+              updateInterval: 100
           }).addTo(map);
           isReady = true;
 
@@ -181,6 +180,21 @@ export default function Dashboard() {
             } else {
               workerMarkers[name].setLatLng(pos);
             }
+          }
+
+          function focusLocation(lat, lon, label) {
+              if(!isReady || !lat || !lon) return;
+              map.flyTo([lat, lon], 16, {
+                  animate: true,
+                  duration: 1.5
+              });
+              
+              // If it's the user, we find the selfMarker. Otherwise, find in workerMarkers.
+              if (label === "You" && selfMarker) {
+                  setTimeout(() => selfMarker.openPopup(), 1500);
+              } else if (workerMarkers[label]) {
+                  setTimeout(() => workerMarkers[label].openPopup(), 1500);
+              }
           }
 
           function removeWorker(name) {
@@ -242,6 +256,8 @@ export default function Dashboard() {
           ref={webViewRef}
           originWhitelist={["*"]}
           javaScriptEnabled={true}
+          mixedContentMode="always"
+          androidLayerType="hardware"
           domStorageEnabled={true}
           userAgent="Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36"
           source={{ html: mapHtml }}
@@ -268,10 +284,18 @@ export default function Dashboard() {
         />
       </View>
 
-      {/* 3. Location Address at the Bottom */}
-      <View className="p-6 items-center">
-        <Text className="text-gray-500 text-xs tracking-widest uppercase mb-1">
-          Your current location:
+      <TouchableOpacity
+        activeOpacity={0.7}
+        onPress={() => {
+          if (location?.latitude && location?.longitude) {
+            const focusSelfScript = `focusLocation(${location.latitude}, ${location.longitude}, "You");`;
+            webViewRef.current?.injectJavaScript(focusSelfScript);
+          }
+        }}
+        className="p-6 items-center"
+      >
+        <Text className="text-blue-500 text-xs tracking-widest uppercase mb-1 font-bold">
+          Your current location (Tap to focus):
         </Text>
 
         <Text className="text-gray-900 text-lg font-bold text-center leading-6">
@@ -279,13 +303,13 @@ export default function Dashboard() {
         </Text>
 
         {location && (
-          <View className="mt-2 bg-gray-200 px-3 py-1 rounded-full">
-            <Text className="text-gray-600 text-[10px] font-mono">
+          <View className="mt-2 bg-blue-100 px-3 py-1 rounded-full border border-blue-200">
+            <Text className="text-blue-600 text-[10px] font-mono">
               {location.latitude.toFixed(6)}, {location.longitude.toFixed(6)}
             </Text>
           </View>
         )}
-      </View>
+      </TouchableOpacity>
 
       {/* 4. Worker List Section */}
       <View className="w-[85%] mx-auto mt-2 mb-10">
@@ -296,8 +320,14 @@ export default function Dashboard() {
           Object.entries(workerLocations)
             .filter(([name]) => name !== userName)
             .map(([name, data]) => (
-              <View
+              <TouchableOpacity
                 key={name}
+                onPress={() => {
+                  if (data.latitude && data.longitude) {
+                    const focusScript = `focusLocation(${data.latitude}, ${data.longitude}, "${name}");`;
+                    webViewRef.current?.injectJavaScript(focusScript);
+                  }
+                }}
                 className="bg-white p-4 rounded-2xl mb-3 shadow-sm flex-row items-center border border-gray-100"
               >
                 <View className="h-10 w-10 rounded-full bg-blue-500 items-center justify-center mr-3">
@@ -311,7 +341,7 @@ export default function Dashboard() {
                     {data.address || "Fetching address..."}
                   </Text>
                 </View>
-              </View>
+              </TouchableOpacity>
             ))
         ) : (
           <View className="p-10 items-center">
