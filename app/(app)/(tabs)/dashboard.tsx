@@ -125,8 +125,8 @@ export default function Dashboard() {
           L.tileLayer('https://tiles.snametechapp.com/styles/basic-preview/{z}/{x}/{y}.png', {
               maxZoom: 18,
               minZoom: 0,
-              keepBuffer: 4,      // Loads 4 rows of tiles outside the visible area
-              updateWhenIdle: false, // Loads tiles while panning for a smoother feel
+              keepBuffer: 4, 
+              updateWhenIdle: false,
               updateInterval: 100
           }).addTo(map);
           isReady = true;

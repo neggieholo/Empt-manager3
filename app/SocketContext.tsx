@@ -74,7 +74,7 @@ export default function MonitoringProvider({
     }
 
     const newSocket = io("https://www.employeetracker.app", {
-      path: "/api/socket.io", // 👈 MUST match the server path exactly
+      path: "/api/socket.io", 
       transports: ["websocket"],
       autoConnect: true,
       extraHeaders: {
